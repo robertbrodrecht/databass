@@ -22,16 +22,19 @@ class Database {
 	/** @var string The last query created */
 	protected $query = '';
 	
-	/** @var array mySQL fields to query for */
-	protected $fields = false;
-	
 	/** @var array The bindings for the current query. */
 	protected $bind = array();
 	
-	/** @var array mySQL ORDER BY array */
+	/** @var string mySQL fields list to query for */
+	protected $fields = false;
+	
+	/** @var string mySQL data for insert / update / replace */
+	protected $data = false;
+	
+	/** @var string mySQL ORDER BY string */
 	protected $sort = false;
 	
-	/** @var array mySQL WHERE array */
+	/** @var string mySQL WHERE string */
 	protected $where = false;
 
 	/** @var string A regular expression to remove bad table characters. */	
@@ -132,24 +135,58 @@ class Database {
 	 */
 	protected function parseArguments($arguments) {
 		$fields = '*';
+		$data = '';
 		$where = '';
 		$sort = '';
 		
-		if($arguments['fields']) {
+		if(@$arguments['data']) {
+			$data = $this->parseData($arguments['data']);
+		}
+		if(@$arguments['fields']) {
 			$fields = $this->parseFields($arguments['fields']);
 		}
-		if($arguments['where']) {
+		if(@$arguments['where']) {
 			$where = $this->parseWhere($arguments['where']);
 		}
-		if($arguments['sort']) {
+		if(@$arguments['sort']) {
 			$sort = $this->parseSort($arguments['sort']);
 		}
 		
-		var_dump(pathinfo(__FILE__, PATHINFO_FILENAME) . ':' . __LINE__ );
-		var_dump($fields, $where, $sort);
+		$this->data = $data;
+		$this->fields = $fields;
+		$this->where = $where;
+		$this->sort = $sort;
 	}
 	
 	protected function parseData($data) {
+		if(!$data || !is_array($data)) {
+			return  '';
+		}
+		
+		$field_list = '';
+		$field_count = 0;
+		
+		foreach($data as $field => $value) {
+			$field = $this->normalizeField($field);
+			if($field) {
+				if($field_list) {
+					$field_list .= ', ';
+				}
+				
+				$field_count = $field_count + 1;
+				$field_binding = ':data_' . $field . '_' . $field_count;
+				$field_list .= '`' . $field . '` = ' . $field_binding;
+				
+				$key_schema = $this->findFieldInSchema($field);
+				$this->registerBinding(
+					$field_binding,
+					$value,
+					$key_schema['type']
+				);
+			}
+		}
+		
+		return $field_list;
 	}
 	
 	protected function parseFields($fields) {
@@ -237,8 +274,6 @@ class Database {
 			if($key) {
 				$where_string_cond = '';
 				$key_schema = $this->findFieldInSchema($key);
-						
-				var_dump(pathinfo(__FILE__, PATHINFO_FILENAME) . ':' . __LINE__ . ' MAKING SOME ASSUMPTIONS ABOUT FIELD BEING IN SCHEMA...');
 				
 				if(!isset($where_counts[$key])) {
 					$where_counts[$key] = 0;
@@ -259,8 +294,8 @@ class Database {
 						
 						$where_counts[$key]++;
 						$key_count = $where_counts[$key];
-						$where_key = 'where-' . $key . '-' . $key_count;
-						$where_keys[] = ':' . $where_key;
+						$where_key = ':where_' . $key . '_' . $key_count;
+						$where_keys[] = $where_key;
 						
 						$this->registerBinding(
 							$where_key, 
@@ -285,7 +320,7 @@ class Database {
 					
 					$where_counts[$key]++;
 					$key_count = $where_counts[$key];
-					$where_key = 'where-' . $key . '-' . $key_count;
+					$where_key = ':where_' . $key . '_' . $key_count;
 					
 					$this->registerBinding(
 						$where_key, 
@@ -297,7 +332,7 @@ class Database {
 						array(
 							'key' => $key,
 							'compare' => $where['compare'],
-							'value' => ':' . $where_key
+							'value' => $where_key
 						)
 					);
 				}
@@ -312,6 +347,28 @@ class Database {
 	}
 	
 	protected function registerBinding($key, $value, $type) {
+		switch($type) {
+			default:
+			case 'string':
+				$value = (string) $value;
+			break;
+			case 'int':
+				$value = (int) $value;
+			break;
+			case 'bool':
+				$value = (bool) $value;
+			break;
+			case 'float':
+				$value = (float) $value;
+			break;
+			case 'date':
+				$value = @date('Y-m-d', @strtotime($value));
+			break;
+			case 'datetime':
+				$value = @date('Y-m-d H:i:s', @strtotime($value));
+			break;
+		}
+		
 		$this->bind[] = array(
 			'key' => $key,
 			'value' => $value,
@@ -513,6 +570,33 @@ class Database {
 		return false;
 	}
 	
+	public function select() {
+		$query = 'SELECT ';
+		$query .= $this->fields;
+		$query .= ' FROM `' . $this->table . '`';
+		
+		if($this->where) {
+			$query .= ' WHERE ' . $this->where;
+		}
+		if($this->sort) {
+			$query .= ' ORDER BY ' . $this->sort;
+		}
+		
+		return $this->query($query);
+	}
+	
+	public function insert() {
+		$query = 'INSERT INTO ';
+		$query .= '`' . $this->table . '` SET ';
+		$query .= $this->data;
+		
+		return (
+			$this->query($query) !== false ? 
+			$this->mysql->lastInsertId() : 
+			false
+		);
+	}
+	
 	/**
 	 * Execute a Query
 	 * 
@@ -522,9 +606,9 @@ class Database {
 	 * @returns bool|array Array if successful, false if error.
 	 * @since	1.0
 	 */
-	protected function query(
-		$sql = '', 
-		$vars = array(), 
+	public function query(
+		$sql = '',
+		$vars = array(),
 		$return_query = false
 	) {
 		
@@ -534,30 +618,30 @@ class Database {
 			return false;
 		}
 		
-		if(!is_array($vars)) {
-			$vars = array();
-		}
-		
 		if($query = $this->mysql->prepare($sql)) {
 			
-			foreach($this->bind as $params) {
-				switch($params['type']) {
-					default:
-					case 'string':
-						$paramconst = PDO::PARAM_STR;
-					break;
-					case 'bool':
-						$paramconst = PDO::PARAM_BOOL;
-					break;
-					case 'int':
-						$paramconst = PDO::PARAM_INT;
-					break;
+			if($vars) {
+				$query->execute($vars);
+			} else {
+				foreach($this->bind as $params) {
+					switch($params['type']) {
+						default:
+						case 'string':
+							$paramconst = PDO::PARAM_STR;
+						break;
+						case 'bool':
+							$paramconst = PDO::PARAM_BOOL;
+						break;
+						case 'int':
+							$paramconst = PDO::PARAM_INT;
+						break;
+					}
+					
+					$query->bindParam($params['key'], $params['value'], $paramconst);
 				}
 				
-				$query->bindParam($params['key'], $params['value'], $paramconst);
+				$query->execute();
 			}
-			
-			$query->execute($vars);
 			
 			if($return_query) {
 				return $query;
