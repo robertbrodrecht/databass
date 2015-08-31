@@ -13,6 +13,9 @@ class Database {
 	/** @var array The schema for the current table */
 	protected $schema = false;
 	
+	/** @var string The currently queried table */
+	protected $table = false;
+	
 	/** @var string The primary key of the table */
 	protected $pk = false;
 	
@@ -112,6 +115,7 @@ class Database {
 		
 		if($table) {
 			$this->schema($table);
+			$this->table = $table;
 		}
 		
 		if($arguments) {
@@ -127,21 +131,53 @@ class Database {
 	 * @since	1.0
 	 */
 	protected function parseArguments($arguments) {
+		$fields = '*';
 		$where = '';
+		$sort = '';
+		
+		if($arguments['fields']) {
+			$fields = $this->parseFields($arguments['fields']);
+		}
 		if($arguments['where']) {
 			$where = $this->parseWhere($arguments['where']);
 		}
 		if($arguments['sort']) {
-			$where = $this->parseSort($arguments['sort']);
+			$sort = $this->parseSort($arguments['sort']);
 		}
 		
-		var_dump(pathinfo(__FILE__, PATHINFO_FILENAME) . ':' . __LINE__ . ' STOP POINT');
+		var_dump(pathinfo(__FILE__, PATHINFO_FILENAME) . ':' . __LINE__ );
+		var_dump($fields, $where, $sort);
 	}
 	
 	protected function parseData($data) {
 	}
 	
 	protected function parseFields($fields) {
+		if(!$fields) {
+			return  '*';
+		}
+		
+		if(!is_array($fields)) {
+			$fields = array($fields);
+		}
+		
+		$field_list = '';
+		
+		foreach($fields as $field) {
+			if($field !== '*') {
+				$field = $this->normalizeField($field);
+				if($field) {
+					if($field_list) {
+						$field_list .= ', ';
+					}
+					$field_list .= '`' . $field . '`';
+				}
+			} else {
+				$field_list .= '*';
+			}
+		}
+		
+		return $field_list;
 	}
 	
 	protected function parseSort($sorts) {
@@ -271,7 +307,8 @@ class Database {
 				}
 			}
 		}
-		var_dump($where_string, $this->bind);
+		
+		return $where_string;
 	}
 	
 	protected function registerBinding($key, $value, $type) {
@@ -280,9 +317,6 @@ class Database {
 			'value' => $value,
 			'type' => $type
 		);
-	}
-	
-	protected function parseOrderBy($orderby) {
 	}
 	
 	protected function parseComparison($conditional = false) {
@@ -411,7 +445,7 @@ class Database {
 			case '!null':
 			break;
 			default:
-				$where_str .= $where_value;
+				$where_str .= $conditional['value'];
 			break;
 		}
 		
@@ -506,9 +540,22 @@ class Database {
 		
 		if($query = $this->mysql->prepare($sql)) {
 			
-			//foreach($vars as $var_key => $var_val) {
-			//	$query->bindParam($var_key, $var_val);
-			//}
+			foreach($this->bind as $params) {
+				switch($params['type']) {
+					default:
+					case 'string':
+						$paramconst = PDO::PARAM_STR;
+					break;
+					case 'bool':
+						$paramconst = PDO::PARAM_BOOL;
+					break;
+					case 'int':
+						$paramconst = PDO::PARAM_INT;
+					break;
+				}
+				
+				$query->bindParam($params['key'], $params['value'], $paramconst);
+			}
 			
 			$query->execute($vars);
 			
