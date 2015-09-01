@@ -597,6 +597,18 @@ class Database {
 		);
 	}
 	
+	public function insert() {
+		$query = 'UPDATE ';
+		$query .= '`' . $this->table . '` SET ';
+		$query .= $this->data;
+		
+		if($this->where) {
+			$query .= ' WHERE ' . $this->data;
+		}
+		
+		return $this->select();
+	}
+	
 	/**
 	 * Execute a Query
 	 * 
