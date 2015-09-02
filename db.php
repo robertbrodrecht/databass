@@ -5,9 +5,81 @@
  * Main Database Class for Extending
  * 
  * @since	1.0
- * @todo	GROUP BY and HAVING?
- * @todo What if you want to a field with a function or something that isn't just a field?
+ * @todo	Decide about GROUP BY and HAVING.
+ * @todo	Decide about what to do if you want to a field with a function, comparison, equation or something that isn't just a field in the schema.
+ * @todo	What about "as" like SELECT name as username FROM users?
  */
+ 
+/*
+
+Thinking out loud, a function could be expressed as this:
+
+array(
+	'function' => 'DATEDIFF',
+	'parameters' => array(
+		array(
+			'function' => 'NOW'
+		),
+		'date'
+	),
+	'as' => 'difference'
+)
+
+A comparison could be:
+
+array(
+	'comparison' => array(
+		'key' => 'date',
+		'compare' => '>',
+		'value' => array(
+			'function' => 'NOW'
+		)
+	),
+	'as' => 'difference'
+)
+
+
+array(
+	'function' => 'DATEDIFF',
+	'parameters' => array(
+		array(
+			'function' => 'NOW'
+		),
+		'date'
+	)
+)
+
+You could send raw data as:
+
+array(
+	'raw' => 'DATEDIFF(NOW(), `date`)',
+	'as' => 'difference'
+)
+
+Doing "date as published" could be:
+
+array('date', 'published')
+
+Or
+
+array('key' => 'date', 'as' => 'published')
+
+An equation could be:
+
+array(
+	'raw' => '1 + 1',
+	'as' => 'maths'
+)
+
+
+So, normalizeField would be recursive if there is an array for function 
+parameters.  It would check for the presence of "raw" or "function".
+
+The comparison is a little iffy to me right now.  Needs more thought.
+
+
+*/
+ 
 class Database {
 	/** @var resource Main mySQL Resource */
 	protected $mysql = false;
@@ -715,19 +787,23 @@ class Database {
 	}
 	
 	protected function normalizeField($key = false, $table = false, $verify = true) {
-		$key = strtolower(trim($key));
-		$key = preg_replace($this->field_preg_filter, '', $key);
-		
-		if(!$table) {
-			$table = $this->table;
-		}
-		
-		if($verify) {
-			$verified = $this->findFieldInSchema($key, $table);
+		if(is_string($key)) {
+			$key = strtolower(trim($key));
+			$key = preg_replace($this->field_preg_filter, '', $key);
 			
-			if(!$verified) {
-				return false;
+			if(!$table) {
+				$table = $this->table;
 			}
+			
+			if($verify) {
+				$verified = $this->findFieldInSchema($key, $table);
+				
+				if(!$verified) {
+					return false;
+				}
+			}
+		} else if(is_array($key)) {
+			
 		}
 		
 		return $key;
