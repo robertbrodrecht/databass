@@ -10,76 +10,6 @@
  * @todo	What about "as" like SELECT name as username FROM users?
  */
  
-/*
-
-Thinking out loud, a function could be expressed as this:
-
-array(
-	'function' => 'DATEDIFF',
-	'parameters' => array(
-		array(
-			'function' => 'NOW'
-		),
-		'date'
-	),
-	'as' => 'difference'
-)
-
-A comparison could be:
-
-array(
-	'comparison' => array(
-		'key' => 'date',
-		'compare' => '>',
-		'value' => array(
-			'function' => 'NOW'
-		)
-	),
-	'as' => 'difference'
-)
-
-
-array(
-	'function' => 'DATEDIFF',
-	'parameters' => array(
-		array(
-			'function' => 'NOW'
-		),
-		'date'
-	)
-)
-
-You could send raw data as:
-
-array(
-	'raw' => 'DATEDIFF(NOW(), `date`)',
-	'as' => 'difference'
-)
-
-Doing "date as published" could be:
-
-array('date', 'published')
-
-Or
-
-array('key' => 'date', 'as' => 'published')
-
-An equation could be:
-
-array(
-	'raw' => '1 + 1',
-	'as' => 'maths'
-)
-
-
-So, normalizeField would be recursive if there is an array for function 
-parameters.  It would check for the presence of "raw" or "function".
-
-The comparison is a little iffy to me right now.  Needs more thought.
-
-
-*/
- 
 class Database {
 	/** @var resource Main mySQL Resource */
 	protected $mysql = false;
@@ -428,12 +358,17 @@ class Database {
 		
 		foreach($fields as $field) {
 			if($field !== '*') {
+				$field_was_advanced = is_array($field);
 				$field = $this->normalizeField($field, $table);
 				if($field) {
 					if($field_list) {
 						$field_list .= ', ';
 					}
-					$field_list .= '`' . $field . '`';
+					if($field_was_advanced) {
+						$field_list .= $field;
+					} else {
+						$field_list .= '`' . $field . '`';
+					}
 				}
 			} else {
 				$field_list .= '*';
@@ -469,6 +404,8 @@ class Database {
 				$sort['key'] = $this->pk[$table];
 			}
 			
+			$field_was_advanced = is_array($sort['key']);
+			
 			$key = $this->normalizeField($sort['key'], $table);
 			
 			switch(strtolower($sort['order'])) {
@@ -486,7 +423,11 @@ class Database {
 					$sort_string .= ', ';
 				}
 				
-				$sort_string .= "`$key` $order";
+				if($field_was_advanced) {
+					$sort_string .= "$key $order";					
+				} else {
+					$sort_string .= "`$key` $order";
+				}
 			}
 		}
 		
@@ -518,14 +459,16 @@ class Database {
 				$where['key'] = $this->pk[$table];
 			}
 			
+			$key_original = $where['key'];
+			$field_was_advanced = is_array($where['key']);
 			$key = $this->normalizeField($where['key'], $table);
 			
 			if($key) {
 				$where_string_cond = '';
-				$key_schema = $this->findFieldInSchema($key, $table);
-				
-				if(!isset($where_counts[$key])) {
-					$where_counts[$key] = 0;
+				if($field_was_advanced) {
+					$key_schema = array('type' => 'string');
+				} else {
+					$key_schema = $this->findFieldInSchema($key, $table);
 				}
 				
 				// Seems sloppy to have two giant chunks of code here to do
@@ -533,32 +476,46 @@ class Database {
 				// **REFACTOR**
 				if(is_array($where['value'])) {
 					$value = $where['value'];
-					$where_keys = array();
 					
-					foreach($value as &$single_value) {
-						$single_value = $this->castValueAs(
-							$single_value, 
-							$key_schema['type']
+					if(isset($value['function'])) {
+						if(!isset($value['parameters'])) {
+							$value['parameters'] = array();
+						}
+						$where_keys = $this->parsefunction(
+							$value['function'], 
+							$value['parameters'], 
+							$table
 						);
-						
-						$where_key = ':where_' . $key . '_' . 
-							count($this->bind);
-						$where_keys[] = $where_key;
-						
-						$this->registerBinding(
-							$where_key, 
-							$single_value,
-							$key_schema['type']
-						);
+					} else if(isset($value['raw'])) {
+						$where_keys = $value['raw'];
+					} else if(isset($value['key'])) {
+						$where_keys = '`' . 
+							$this->normalizeField($value['key'], $table) .
+							'`';
+					} else {					
+						$where_keys = array();
+						foreach($value as &$single_value) {
+							$single_value = $this->castValueAs(
+								$single_value, 
+								$key_schema['type']
+							);
+							
+							if($field_was_advanced) {
+								$where_key = ':where_ADVANCED_' . 
+									count($this->bind);
+							} else {
+								$where_key = ':where_' . $key . '_' . 
+									count($this->bind);
+							}
+							$where_keys[] = $where_key;
+							
+							$this->registerBinding(
+								$where_key, 
+								$single_value,
+								$key_schema['type']
+							);
+						}
 					}
-					
-					$where_string_cond = $this->parseComparison(
-						array(
-							'key' => $key,
-							'compare' => $where['compare'],
-							'value' => $where_keys
-						)
-					);
 					
 				} else {
 					$value = $this->castValueAs(
@@ -566,22 +523,29 @@ class Database {
 						$key_schema['type']
 					);
 					
-					$where_key = ':where_' . $key . '_' . count($this->bind);
+					if($field_was_advanced) {
+						$where_keys = ':where_ADVANCED_' . 
+							count($this->bind);
+					} else {
+						$where_keys = ':where_' . $key . '_' . 
+							count($this->bind);
+					}
 					
 					$this->registerBinding(
-						$where_key, 
+						$where_keys, 
 						$value,
 						$key_schema['type']
 					);
-					
-					$where_string_cond = $this->parseComparison(
-						array(
-							'key' => $key,
-							'compare' => $where['compare'],
-							'value' => $where_key
-						)
-					);
 				}
+				
+				$where_string_cond = $this->parseComparison(
+					array(
+						'key' => $key_original,
+						'compare' => $where['compare'],
+						'value' => $where_keys
+					),
+					$table
+				);
 				
 				if($where_string_cond) {
 					$where_string .= ' AND ' . $where_string_cond;
@@ -622,7 +586,55 @@ class Database {
 		);
 	}
 	
-	protected function parseComparison($conditional = false) {
+	protected function parsefunction(
+		$function = false, 
+		$parameters = false, 
+		$table = false
+	) {
+		if($function === false) {
+			return '';
+		}
+		
+		if($parameters === false) {
+			return '';
+		}
+		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
+		$call = '';
+		
+		$call .= $function;
+		
+		if($function !== 'DISTINCT' && $function !== 'DISTINCTROW') {
+			$call .= '(';
+		}
+		
+		$param_list = '';
+		
+		foreach($parameters as $param) {
+			if($param_list) {
+				$param_list .= ', ';
+			}
+			if(is_array($param)) {
+				$param_list .= $this->normalizeField($param, $table);
+			} else {
+				$param_list .= '`' . 
+					$this->normalizeField($param, $table) . '`';
+			}
+		}
+		
+		$call .= $param_list;
+		
+		if($function !== 'DISTINCT' && $function !== 'DISTINCTROW') {
+			$call .= ')';
+		}
+		
+		return $call;
+	}
+	
+	protected function parseComparison($conditional = false, $table = false) {
 		if(!$conditional) {
 			return '';
 		}
@@ -635,8 +647,21 @@ class Database {
 			return '';
 		}
 		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
 		$where_str = '';
-		$where_str = '`' . $conditional['key'] . '`';
+		
+		$field_was_advanced = is_array($conditional['key']);
+
+		$key = $this->normalizeField($conditional['key'], $table);
+		
+		if($field_was_advanced) {
+			$where_str = $key;
+		} else {
+			$where_str = '`' . $key . '`';
+		}
 		
 		switch(strtolower($conditional['compare'])) {
 			default:
@@ -776,10 +801,10 @@ class Database {
 				$value = (bool) $value;
 			break;
 			case 'date':
-				$value = date('Y-m-d', strtotime($value));
+				$value = @date('Y-m-d', strtotime($value));
 			break;
 			case 'datetime':
-				$value = date('Y-m-d H:i:s', strtotime($value));
+				$value = @date('Y-m-d H:i:s', strtotime($value));
 			break;
 		}
 		
@@ -803,7 +828,37 @@ class Database {
 				}
 			}
 		} else if(is_array($key)) {
+			$return_key = '';
 			
+			if(isset($key['raw'])) {
+				$return_key .= $key['raw'];
+			} else if(isset($key['function'])) {
+				if(!isset($key['parameters'])) {
+					$key['parameters'] = array();
+				}
+				$return_key .= $this->parseFunction(
+					$key['function'], 
+					$key['parameters'], 
+					$table
+				);
+			} else if(isset($key['comparison'])) {
+				$return_key .= $this->parseComparison(
+					$key['comparison'], 
+					$table
+				);
+			} else if(isset($key['key'])) {
+				$return_key .= '`' . $this->normalizeField($key['key']) . '`';
+			}
+			
+			if(isset($key['as'])) {
+				$as = strtolower(trim($key['as']));
+				$as = preg_replace($this->field_preg_filter, '', $as);
+				$return_key .= ' as ' . $as;
+			}
+			
+
+			
+			$key = $return_key;
 		}
 		
 		return $key;
@@ -956,6 +1011,38 @@ class Database {
 		return $this->select($table, '*', $where_orig);
 	}
 	
+	
+	public function delete($table = false, $where = false) {
+		
+		if(!$table) {
+			$table = $this->table;
+		} else {
+			$table = trim($table);
+			$this->schema($table);
+		}
+		
+		if(!$where) {
+			$where_orig = false;
+			$where = $this->where;
+		} else {
+			$where_orig = $where;
+			$where = $this->parseWhere($where, $table);
+		}
+		
+		$deleted_rows = $this->select($table, '*', $where_orig);
+		
+		$query = 'DELETE FROM ';
+		$query .= '`' . $table. '`';
+		
+		if($where) {
+			$query .= ' WHERE ' . $where;
+		}
+		
+		$this->query($query);
+		
+		return $deleted_rows;
+	}
+	
 	/**
 	 * Execute a Query
 	 * 
@@ -976,8 +1063,6 @@ class Database {
 		if($sql === '') {
 			return false;
 		}
-		
-		var_dump($sql, $this->bind);
 		
 		if($query = $this->mysql->prepare($sql)) {
 			
