@@ -6,8 +6,7 @@
  * 
  * @since	1.0
  * @todo	Decide about GROUP BY and HAVING.
- * @todo	Decide about what to do if you want to a field with a function, comparison, equation or something that isn't just a field in the schema.
- * @todo	What about "as" like SELECT name as username FROM users?
+ * @todo	Documentation...
  */
  
 class Database {
@@ -1043,6 +1042,21 @@ class Database {
 		return $deleted_rows;
 	}
 	
+	
+	public function truncate($table = false) {
+		
+		if(!$table) {
+			$table = $this->table;
+		} else {
+			$table = trim($table);
+			$this->schema($table);
+		}
+		
+		$query = 'TRUNCATE `' . $table. '`';
+		
+		return $this->query($query, false, true);
+	}
+	
 	/**
 	 * Execute a Query
 	 * 
@@ -1135,6 +1149,10 @@ class Database {
 		
 		// Initialize the array.
 		$schema = array();
+		
+		if(!$schema_data) {
+			return false;
+		}
 		
 		// Loop the schema data.
 		foreach($schema_data as $data) {
