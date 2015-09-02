@@ -5,6 +5,8 @@
  * Main Database Class for Extending
  * 
  * @since	1.0
+ * @todo	GROUP BY and HAVING?
+ * @todo What if you want to a field with a function or something that isn't just a field?
  */
 class Database {
 	/** @var resource Main mySQL Resource */
@@ -17,7 +19,7 @@ class Database {
 	protected $table = false;
 	
 	/** @var string The primary key of the table */
-	protected $pk = false;
+	protected $pk = array();
 	
 	/** @var string The last query created */
 	protected $query = '';
@@ -36,6 +38,9 @@ class Database {
 	
 	/** @var string mySQL WHERE string */
 	protected $where = false;
+	
+	/** @var string mySQL LIMIT string */
+	protected $limit = '';
 
 	/** @var string A regular expression to remove bad table characters. */	
 	private $table_preg_filter = '/[^a-z0-9_]/';
@@ -48,81 +53,125 @@ class Database {
 	 * 
 	 * @since	1.0
 	 */
-	function __construct($table = false, $arguments = array(), $settings = array()) {
+	function __construct(
+		$table = false, 
+		$arguments = array(), 
+		$settings = array()
+	) {
 		
-		$dsn = false;
-		$username = false;
-		$password = false;
-		
-		if($settings) {
-			if(isset($settings['dsn'])) {
-				$dsn = $settings['dsn'];
-			} else if(
-				isset($settings['host']) && 
-				isset($settings['database'])
-			) {
-				$dsn = 'mysql:host=' . 
-						$settings['host'] . 
-						';dbname=' . 
-						$settings['database'];
-			}
-			if(isset($settings['username'])) {
-				$username = $settings['username'];
-			}
-			if(isset($settings['password'])) {
-				$password = $settings['password'];
-			}
-		} else {
-			if(defined('DB_DSN')) {
-				$dsn = DB_DSN;
-			}
-			if(defined('DB_USERNAME')) {
-				$username = DB_USERNAME;
-			}
-			if(defined('DB_PASSWORD')) {
-				$password = DB_PASSWORD;
-			}
-		}
-		
-		if(!$dsn) {
-			throw new Exception('Database connection failed. Missing DSN.');
-			return;
-		}
-		
-		if(!$username) {
-			throw new Exception('Database connection failed. Missing username.');
-			return;
-		}
-		
-		if(!$password) {
-			throw new Exception('Database connection failed. Missing password.');
-			return;
-		}
-		
-		// Connect to the database.
-		try {
-			$this->mysql = new PDO(
-				$dsn, 
-				$username, 
-				$password,
-				array(
-				    PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8',
-				)
-			);
+		if(!$this->mysql) {		
+			$dsn = false;
+			$username = false;
+			$password = false;
 			
-		// Quit if there is no connection.
-		} catch(PDOException $Exception) {
-			throw new Exception('Database connection failed.');
-			return;
+			if($settings) {
+				if(isset($settings['dsn'])) {
+					$dsn = $settings['dsn'];
+				} else if(
+					isset($settings['host']) && 
+					isset($settings['database'])
+				) {
+					$dsn = 'mysql:host=' . 
+							$settings['host'] . 
+							';dbname=' . 
+							$settings['database'];
+				}
+				if(isset($settings['username'])) {
+					$username = $settings['username'];
+				}
+				if(isset($settings['password'])) {
+					$password = $settings['password'];
+				}
+			} else {
+				if(defined('DB_DSN')) {
+					$dsn = DB_DSN;
+				}
+				if(defined('DB_USERNAME')) {
+					$username = DB_USERNAME;
+				}
+				if(defined('DB_PASSWORD')) {
+					$password = DB_PASSWORD;
+				}
+			}
+			
+			if(!$dsn) {
+				throw new Exception(
+					'Database connection failed. Missing DSN.'
+				);
+				return;
+			}
+			
+			if(!$username) {
+				throw new Exception(
+					'Database connection failed. Missing username.'
+				);
+				return;
+			}
+			
+			if(!$password) {
+				throw new Exception(
+					'Database connection failed. Missing password.'
+				);
+				return;
+			}
+			
+			// Connect to the database.
+			try {
+				$this->mysql = new PDO(
+					$dsn, 
+					$username, 
+					$password,
+					array(
+					    PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8',
+					)
+				);
+				
+			// Quit if there is no connection.
+			} catch(PDOException $Exception) {
+				throw new Exception('Database connection failed.');
+				return;
+			}
 		}
+		
+		$this->initialize($table, $arguments);
+	}
+	
+	/**
+	 * Reset all class variables.
+	 * 
+	 * @since	1.0
+	 */
+	protected function reset() {
+		$this->schema = false;
+		$this->table = false;
+		$this->pk = array();
+		$this->query = '';
+		$this->bind = array();
+		$this->fields = false;
+		$this->data = false;
+		$this->sort = false;
+		$this->where = false;
+		$this->limit = '';
+	}
+	
+	/**
+	 * Initialize class variables.
+	 * 
+	 * @param string $table The table being queried.
+	 * @param array $arguments The query data.
+	 * @since	1.0
+	 */
+	public function initialize($table = false, $arguments = false) {
+		$this->reset();
 		
 		if($table) {
+			$table = trim($table);
 			$this->schema($table);
 			$this->table = $table;
 		}
 		
-		if($arguments) {
-			$this->parseArguments($arguments);
+		if($table && $arguments) {
+			$this->parseArguments($arguments, $table);
 		}
 	}
 	
@@ -133,51 +182,144 @@ class Database {
 	 * @returns bool|array Array if successful, false if error.
 	 * @since	1.0
 	 */
-	protected function parseArguments($arguments) {
+	protected function parseArguments($arguments = array(), $table = false) {
 		$fields = '*';
 		$data = '';
 		$where = '';
 		$sort = '';
+		$limit = '';
 		
 		if(@$arguments['data']) {
-			$data = $this->parseData($arguments['data']);
+			$data = $this->parseData($arguments['data'], $table);
 		}
 		if(@$arguments['fields']) {
-			$fields = $this->parseFields($arguments['fields']);
+			$fields = $this->parseFields($arguments['fields'], $table);
 		}
 		if(@$arguments['where']) {
-			$where = $this->parseWhere($arguments['where']);
+			$where = $this->parseWhere($arguments['where'], $table);
 		}
 		if(@$arguments['sort']) {
-			$sort = $this->parseSort($arguments['sort']);
+			$sort = $this->parseSort($arguments['sort'], $table);
+		}
+		if(@$arguments['limit']) {
+			$limit = $this->parseLimit($arguments['limit']);
 		}
 		
 		$this->data = $data;
 		$this->fields = $fields;
 		$this->where = $where;
 		$this->sort = $sort;
+		$this->limit = $limit;
 	}
 	
-	protected function parseData($data) {
+	/**
+	 * Parse the Limit Array into SQL
+	 * 
+	 * The $limit can be:
+	 * * 1
+	 * * 1,1
+	 * * array(1) where key 0 is the limit
+	 * * array(1, 1) where key 0 is the offiset and key 1 is the limit
+	 * * array('limit' => 1)
+	 * * array('limit' => 1, 'offset' => 1)
+	 * * array('limit' => 1, 'page' => 1)
+	 * 
+	 * If you use the associative array with 'page', the offset is calculated
+	 * for you based on the 'limit'.
+	 * 
+	 * @param array $limit The limit array
+	 * @returns string
+	 * @since	1.0
+	 */
+	protected function parseLimit($limit) {
+		if(isset($limit['limit'])) {	
+			if(is_int($limit['limit'])) {
+				$limitint = $limit['limit'];
+			} else {
+				$limitint = (int) trim($limit['limit']);
+			}
+			
+			if(isset($limit['offset'])) {
+				if(is_int($limit['offset'])) {
+					$offset = $limit['offset'];
+				} else {
+					$offset = (int) trim($limit['offset']);
+				}
+			} else if(isset($limit['page'])) {
+				if(is_int($limit['page'])) {
+					$page = $limit['page'];
+				} else {
+					$page = (int) trim($limit['page']);
+				}
+				
+				if($page < 1) {
+					$page = 1;
+				}
+				
+				$offset = ($page-1) * $limitint;
+			} else {
+				$offset = 0;
+			}
+			
+			return $limitint . ' OFFSET ' . $offset;
+		}
+		
+		if(!is_array($limit)) {
+			if(is_string($limit)) {
+				$limit = explode(',', $limit);
+				foreach($limit as &$limit_part) {
+					$limit_part = trim($limit_part);
+				}
+			} else if(is_int($limit)) {
+				$limit = array($limit);
+			}
+		}
+		
+		foreach($limit as &$limit_part) {
+			$limit_part = (int) $limit_part;
+		}
+		
+		if(count($limit) === 1) {
+			$offset = 0;
+			$limitint = $limit[0];
+		} else {
+			$offset = $limit[0];
+			$limitint = $limit[1];
+		}
+		
+		return $limitint . ' OFFSET ' . $offset;
+	}
+	
+	/**
+	 * Parse the Data Array into SQL for INSERT / UPDATE
+	 * 
+	 * @param array $data The data array containing key/value for insert.
+	 * @param string $table The table being queried against.
+	 * @returns string
+	 * @since	1.0
+	 */
+	protected function parseData($data, $table = false) {
 		if(!$data || !is_array($data)) {
 			return  '';
 		}
 		
 		$field_list = '';
-		$field_count = 0;
+		
+		if(!$table) {
+			$table = $this->table;
+		}
 		
 		foreach($data as $field => $value) {
-			$field = $this->normalizeField($field);
+			$field = $this->normalizeField($field, $table);
 			if($field) {
 				if($field_list) {
 					$field_list .= ', ';
 				}
 				
-				$field_count = $field_count + 1;
-				$field_binding = ':data_' . $field . '_' . $field_count;
+				$field_binding = ':data_' . $field . '_' . count($this->bind);
 				$field_list .= '`' . $field . '` = ' . $field_binding;
 				
-				$key_schema = $this->findFieldInSchema($field);
+				$key_schema = $this->findFieldInSchema($field, $table);
 				$this->registerBinding(
 					$field_binding,
 					$value,
@@ -189,7 +331,15 @@ class Database {
 		return $field_list;
 	}
 	
-	protected function parseFields($fields) {
+	/**
+	 * Parse the Fields
+	 * 
+	 * @param array $fields The fields array containing query data.
+	 * @param string $table The table being queried against.
+	 * @returns string
+	 * @since	1.0
+	 */
+	protected function parseFields($fields, $table = false) {
 		if(!$fields) {
 			return  '*';
 		}
@@ -200,9 +350,13 @@ class Database {
 		
 		$field_list = '';
 		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
 		foreach($fields as $field) {
 			if($field !== '*') {
-				$field = $this->normalizeField($field);
+				$field = $this->normalizeField($field, $table);
 				if($field) {
 					if($field_list) {
 						$field_list .= ', ';
@@ -217,7 +371,15 @@ class Database {
 		return $field_list;
 	}
 	
-	protected function parseSort($sorts) {
+	/**
+	 * Parse the ORDER BY
+	 * 
+	 * @param array $sorts The fields array containing sort data.
+	 * @param string $table The table being queried against.
+	 * @returns string
+	 * @since	1.0
+	 */
+	protected function parseSort($sorts, $table = false) {
 		
 		if(!$sorts) {
 			return '';
@@ -225,13 +387,17 @@ class Database {
 		
 		$sort_string = '';
 		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
 		foreach($sorts as &$sort) {
 			
 			if($sort['key'] === '%PK') {
-				$sort['key'] = $this->pk;
+				$sort['key'] = $this->pk[$table];
 			}
 			
-			$key = $this->normalizeField($sort['key']);
+			$key = $this->normalizeField($sort['key'], $table);
 			
 			switch(strtolower($sort['order'])) {
 				default:
@@ -255,25 +421,36 @@ class Database {
 		return $sort_string;
 	}
 	
-	protected function parseWhere($wheres = false) {
+	/**
+	 * Parse the WHERE into SQL
+	 * 
+	 * @param array $wheres The WHERE conditionals
+	 * @param string $table The table being queried against.
+	 * @returns string
+	 * @since	1.0
+	 */
+	protected function parseWhere($wheres = false, $table = false) {
 		
 		if(!$wheres) {
 			return '';
 		}
 		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
 		$where_string = '1 = 1';
-		$where_counts = array();
 		
 		foreach($wheres as &$where) {
 			if($where['key'] === '%PK') {
-				$where['key'] = $this->pk;
+				$where['key'] = $this->pk[$table];
 			}
 			
-			$key = $this->normalizeField($where['key']);
+			$key = $this->normalizeField($where['key'], $table);
 			
 			if($key) {
 				$where_string_cond = '';
-				$key_schema = $this->findFieldInSchema($key);
+				$key_schema = $this->findFieldInSchema($key, $table);
 				
 				if(!isset($where_counts[$key])) {
 					$where_counts[$key] = 0;
@@ -292,9 +469,8 @@ class Database {
 							$key_schema['type']
 						);
 						
-						$where_counts[$key]++;
-						$key_count = $where_counts[$key];
-						$where_key = ':where_' . $key . '_' . $key_count;
+						$where_key = ':where_' . $key . '_' . 
+							count($this->bind);
 						$where_keys[] = $where_key;
 						
 						$this->registerBinding(
@@ -318,9 +494,7 @@ class Database {
 						$key_schema['type']
 					);
 					
-					$where_counts[$key]++;
-					$key_count = $where_counts[$key];
-					$where_key = ':where_' . $key . '_' . $key_count;
+					$where_key = ':where_' . $key . '_' . count($this->bind);
 					
 					$this->registerBinding(
 						$where_key, 
@@ -540,12 +714,16 @@ class Database {
 		return $value;
 	}
 	
-	protected function normalizeField($key = false, $verify = true) {
+	protected function normalizeField($key = false, $table = false, $verify = true) {
 		$key = strtolower(trim($key));
 		$key = preg_replace($this->field_preg_filter, '', $key);
 		
+		if(!$table) {
+			$table = $this->table;
+		}
+		
 		if($verify) {
-			$verified = $this->findFieldInSchema($key);
+			$verified = $this->findFieldInSchema($key, $table);
 			
 			if(!$verified) {
 				return false;
@@ -555,13 +733,21 @@ class Database {
 		return $key;
 	}
 	
-	protected function findFieldInSchema($field = false) {
+	protected function findFieldInSchema($field = false, $table = false) {
 		
 		if(!$field) {
 			return false;
 		}
 		
-		foreach($this->schema as $schema_key => $schema_value) {
+		if(!$table) {
+			$table = $this->table;
+		}
+		
+		if(!isset($this->schema[$table])) {
+			$this->schema($table);
+		}
+		
+		foreach($this->schema[$table] as $schema_key => $schema_value) {
 			if($schema_key === $field) {
 				return $schema_value;
 			}
@@ -570,43 +756,128 @@ class Database {
 		return false;
 	}
 	
-	public function select() {
-		$query = 'SELECT ';
-		$query .= $this->fields;
-		$query .= ' FROM `' . $this->table . '`';
+	public function select(
+		$table = false, 
+		$fields = false, 
+		$where = false,
+		$sort = false,
+		$limit = false
+	) {
 		
-		if($this->where) {
-			$query .= ' WHERE ' . $this->where;
+		if(!$table) {
+			$table = $this->table;
+		} else {
+			$table = trim($table);
+			$this->schema($table);
 		}
-		if($this->sort) {
-			$query .= ' ORDER BY ' . $this->sort;
+		
+		if(!$fields) {
+			$fields = $this->fields;
+		} else {
+			$data = $this->parseFields($fields, $table);
+		}
+		
+		if(!$where) {
+			$where = $this->where;
+		} else {
+			$where = $this->parseWhere($where, $table);
+		}
+		
+		if(!$sort) {
+			$sort = $this->sort;
+		} else {
+			$sort = $this->parseSort($sort, $table);
+		}
+		
+		if(!$limit) {
+			$limit = $this->limit;
+		} else {
+			$limit = $this->parseLimit($limit);
+		}
+		
+		$query = 'SELECT ';
+		$query .= $fields;
+		$query .= ' FROM `' . $table . '`';
+		
+		if($where) {
+			$query .= ' WHERE ' . $where;
+		}
+		
+		if($sort) {
+			$query .= ' ORDER BY ' . $sort;
+		}
+		
+		if($limit) {
+			$query .= ' LIMIT ' . $limit;
 		}
 		
 		return $this->query($query);
 	}
 	
-	public function insert() {
-		$query = 'INSERT INTO ';
-		$query .= '`' . $this->table . '` SET ';
-		$query .= $this->data;
+	public function insert($table = false, $data = false) {
 		
-		return (
-			$this->query($query) !== false ? 
-			$this->mysql->lastInsertId() : 
-			false
-		);
-	}
-	
-	public function insert() {
-		$query = 'UPDATE ';
-		$query .= '`' . $this->table . '` SET ';
-		$query .= $this->data;
-		
-		if($this->where) {
-			$query .= ' WHERE ' . $this->data;
+		if(!$table) {
+			$table = $this->table;
+		} else {
+			$table = trim($table);
+			$this->schema($table);
 		}
 		
-		return $this->select();
+		if(!$data) {
+			$data = $this->data;
+		} else {
+			$data = $this->parseData($data, $table);
+		}
+		
+		$query = 'INSERT INTO ';
+		$query .= '`' . $table. '` SET ';
+		$query .= $data;
+		
+		if($this->query($query) !== false) {
+			return $this->query(
+				'SELECT * FROM `' . $table . '` WHERE ' . 
+				$this->pk[$table] . ' = ' . $this->mysql->lastInsertId(),
+				false
+			);
+		} else {
+			return false;
+		}
+	}
+	
+	public function update($table = false, $data = false, $where = false) {
+		
+		if(!$table) {
+			$table = $this->table;
+		} else {
+			$table = trim($table);
+			$this->schema($table);
+		}
+		
+		if(!$data) {
+			$data = $this->data;
+		} else {
+			$data = $this->parseData($data, $table);
+		}
+		
+		if(!$where) {
+			$where_orig = false;
+			$where = $this->where;
+		} else {
+			$where_orig = $where;
+			$where = $this->parseWhere($where, $table);
+		}
+		
+		$query = 'UPDATE ';
+		$query .= '`' . $table. '` SET ';
+		$query .= $data;
+		
+		if($where) {
+			$query .= ' WHERE ' . $where;
+		}
+		
+		$this->query($query);
+		
+		return $this->select($table, '*', $where_orig);
 	}
 	
 	/**
@@ -630,26 +901,34 @@ class Database {
 			return false;
 		}
 		
+		var_dump($sql, $this->bind);
+		
 		if($query = $this->mysql->prepare($sql)) {
 			
-			if($vars) {
-				$query->execute($vars);
+			if($vars === false || $vars) {
+				if($vars) {
+					$query->execute($vars);
+				} else {
+					$query->execute();
+				}
 			} else {
 				foreach($this->bind as $params) {
-					switch($params['type']) {
-						default:
-						case 'string':
-							$paramconst = PDO::PARAM_STR;
-						break;
-						case 'bool':
-							$paramconst = PDO::PARAM_BOOL;
-						break;
-						case 'int':
-							$paramconst = PDO::PARAM_INT;
-						break;
+					if(stristr($sql, $params['key']) !== false) {
+						switch($params['type']) {
+							default:
+							case 'string':
+								$paramconst = PDO::PARAM_STR;
+							break;
+							case 'bool':
+								$paramconst = PDO::PARAM_BOOL;
+							break;
+							case 'int':
+								$paramconst = PDO::PARAM_INT;
+							break;
+						}
+						
+						$query->bindParam($params['key'], $params['value'], $paramconst);
 					}
-					
-					$query->bindParam($params['key'], $params['value'], $paramconst);
 				}
 				
 				$query->execute();
@@ -661,6 +940,8 @@ class Database {
 			
 			if($query->errorCode() === '00000') {
 				
+				// If ever you want to convert to specific variable types
+				// this is where you would do it...
 				$results = array();
 				while($row = $query->fetch(PDO::FETCH_ASSOC)) {
 					$results[] = $row;
@@ -725,7 +1006,7 @@ class Database {
 			$data_is_pk = ($data['Key'] === 'PRI');
 			
 			if($data_is_pk) {
-				$this->pk = $data['Field'];
+				$this->pk[$table] = $data['Field'];
 			}
 			
 			// Default value.
@@ -791,7 +1072,7 @@ class Database {
 		}
 		
 		// Set the schema.
-		$this->schema = $schema;
+		$this->schema[$table] = $schema;
 		
 		return $schema;
 	}
