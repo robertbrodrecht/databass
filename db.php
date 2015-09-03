@@ -11,7 +11,7 @@
  
 class Database {
 	/** @var resource Main mySQL Resource */
-	protected $mysql = false;
+	public $mysql = false;
 	
 	/** @var array The schema for the current table */
 	protected $schema = false;
@@ -52,6 +52,10 @@ class Database {
 	/**
 	 * Construct the Class
 	 * 
+	 * @param	string $table The default table to start working with.
+	 * @param	array $arguments The settings for the default query, if any.
+	 * @param	array $settings The connection settings.
+	 * @uses	Database::initialize
 	 * @since	1.0
 	 */
 	function __construct(
@@ -60,11 +64,13 @@ class Database {
 		$settings = array()
 	) {
 		
+		// If we're not already connected, connect.
 		if(!$this->mysql) {		
 			$dsn = false;
 			$username = false;
 			$password = false;
 			
+			// Use either $settings or constants to get settings.
 			if($settings) {
 				if(isset($settings['dsn'])) {
 					$dsn = $settings['dsn'];
@@ -95,6 +101,7 @@ class Database {
 				}
 			}
 			
+			// Validate the settings.
 			if(!$dsn) {
 				throw new Exception(
 					'Database connection failed. Missing DSN.'
@@ -134,6 +141,7 @@ class Database {
 			}
 		}
 		
+		// Initialize the class with the variables given.
 		$this->initialize($table, $arguments);
 	}
 	
