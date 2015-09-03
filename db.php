@@ -6,7 +6,7 @@
  * 
  * @since	1.0
  * @todo	Decide about GROUP BY and HAVING.
- * @todo	Documentation...
+ * @todo	Should the bindParam use the $length parameter?
  */
  
 class Database {
@@ -168,6 +168,8 @@ class Database {
 	 * 
 	 * @param string $table The table being queried.
 	 * @param array $arguments The query data.
+	 * @uses	Database::schema
+	 * @uses	Database::parseArguments
 	 * @since	1.0
 	 */
 	public function initialize($table = false, $arguments = false) {
@@ -188,6 +190,7 @@ class Database {
 	 * Parse the Arguments into a Usable form
 	 * 
 	 * @param	array $arguments The array to parse out.
+	 * @param string $table The table being queried.
 	 * @returns bool|array Array if successful, false if error.
 	 * @since	1.0
 	 */
