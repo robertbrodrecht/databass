@@ -23,7 +23,7 @@ class Database {
 	protected $pk = array();
 	
 	/** @var string The last query created */
-	protected $query = '';
+	public $query = '';
 	
 	/** @var array The bindings for the current query. */
 	protected $bind = array();
@@ -1088,6 +1088,8 @@ class Database {
 		if($sql === '') {
 			return false;
 		}
+		
+		$this->query = $sql;
 		
 		if($query = $this->mysql->prepare($sql)) {
 			
