@@ -1214,6 +1214,7 @@ class Database {
 				case 'CURRENT_TIMESTAMP':
 					if($data['Extra'] === 'on update CURRENT_TIMESTAMP') {
 						$data_default = null;
+						$data_allow_null = true;
 					} else {
 						$data_default = date('Y-m-d H:i:s');
 					}
