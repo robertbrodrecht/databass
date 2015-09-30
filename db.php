@@ -19,6 +19,10 @@ class Database {
 	/** @var string The currently queried table */
 	protected $table = false;
 	
+	
+	/** @var array The currently queried arguments */
+	protected $arguments = false;
+	
 	/** @var string The primary key of the table */
 	protected $pk = array();
 	
@@ -182,6 +186,7 @@ class Database {
 		}
 		
 		if($table && $arguments) {
+			$this->arguments = $arguments;
 			$this->parseArguments($arguments, $table);
 		}
 	}
