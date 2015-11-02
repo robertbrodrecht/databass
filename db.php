@@ -46,6 +46,21 @@ class Database {
 	
 	/** @var string mySQL LIMIT string */
 	protected $limit = '';
+	
+	/** @var string mySQL fields list to query for */
+	protected $initfields = false;
+	
+	/** @var string mySQL data for insert / update / replace */
+	protected $initdata = false;
+	
+	/** @var string mySQL ORDER BY string */
+	protected $initsort = false;
+	
+	/** @var string mySQL WHERE string */
+	protected $initwhere = false;
+	
+	/** @var string mySQL LIMIT string */
+	protected $initlimit = '';
 
 	/** @var string A regular expression to remove bad table characters. */	
 	private $table_preg_filter = '/[^a-z0-9_]/';
@@ -206,6 +221,12 @@ class Database {
 		$where = '';
 		$sort = '';
 		$limit = '';
+		
+		$this->initdata = $arguments['data'];
+		$this->initfields = $arguments['fields'];
+		$this->initwhere = $arguments['where'];
+		$this->initsort = $arguments['sort'];
+		$this->initlimit = $arguments['limit'];
 		
 		if(@$arguments['data']) {
 			$data = $this->parseData($arguments['data'], $table);
