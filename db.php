@@ -7,6 +7,8 @@
  * @since	1.0
  * @todo	Decide about GROUP BY and HAVING.
  * @todo	Should the bindParam use the $length parameter?
+ * @todo	I don't think the results are getting type converted.
+ * @todo	Should type converting be a setting?
  */
  
 class Database {
