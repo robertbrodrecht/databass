@@ -97,13 +97,13 @@ For example, the fields key in simplest form is a series of field names.  If a f
 The least confusing is if you need to use an "as" with your field.  In that case, you would do:
 
 ```
-array('key' => 'id', 'as' => 'myid')  // Converts to: `id`
+array('key' => 'id', 'as' => 'myid')  // Output: `id` as myid
 ```
 
 You can also send raw, unprocessed strings:
 
 ```
-array('raw' => '`id` * `id`', 'as' => 'idsq') // Converts to: `id` * `id` as idsq
+array('raw' => '`id` * `id`', 'as' => 'idsq') // Output: `id` * `id` as idsq
 ```
 
 You can add comparisons as well:
@@ -117,7 +117,7 @@ array(
 	), 
 	'as' => 'newerid'
 ) 
-// converts to `id` > 3 as newerid
+// Output: `id` > 3 as newerid
 ```
 
 Finally, you can add functions:
@@ -133,7 +133,7 @@ array(
 	),
 	'as' => 'difference'
 )
-// Converts to DATEDIFF(NOW(), `date`) as difference
+// Output: DATEDIFF(NOW(), `date`) as difference
 ```
 
 As you may have suspected, after seeing the function example, (almost) anywhere you can add a field or value, you can also add an advanced field.  So, you can nest comparisons or functions within comparisons or functions.  The exception is in the 'data' key (see above).  The 'key' key must be a field name.
@@ -146,7 +146,7 @@ Fields has a special case for getting all columns:
 
 ```
 'fields' => array('*')
-// Convers to SELECT * FROM...
+// Output: SELECT * FROM...
 ```
 
 Limit can use 'limit' and 'offset':
@@ -156,7 +156,7 @@ Limit can use 'limit' and 'offset':
 	'limit' => 5,
 	'offset' => 5
 )
-// Convers to LIMIT 5 OFFSET 5
+// Output: LIMIT 5 OFFSET 5
 ```
 
 Or Limit can use 'limit' and 'page' to automatically calculate the offest:
@@ -167,7 +167,7 @@ Or Limit can use 'limit' and 'page' to automatically calculate the offest:
 	'limit' => 5,
 	'page' => 1
 )
-// Convers to LIMIT 5 OFFSET 5
+// Output: LIMIT 5 OFFSET 5
 ```
 
 Limit does not require 'offset' or 'page':
@@ -176,21 +176,21 @@ Limit does not require 'offset' or 'page':
 'limit' => array(
 	'limit' => 5
 )
-// Convers to LIMIT 5 OFFSET 0
+// Output: LIMIT 5 OFFSET 0
 ```
 
 And limit can also be a string such as:
 
 ```
 'limit' => 5
-// Convers to LIMIT 5 OFFSET 0
+// Output: LIMIT 5 OFFSET 0
 ```
 
 or
 
 ```
 'limit' => '10,5'
-// Convers to LIMIT 5 OFFSET 10
+// Output: LIMIT 5 OFFSET 10
 ```
 
 Sort does not require an 'order' as it will be set to 'ASC' by default.  
@@ -201,7 +201,7 @@ Sort does not require an 'order' as it will be set to 'ASC' by default.
 		'key' => 'name',
 	)
 )
-// Converts to ORDER BY `name` ASC
+// Output: ORDER BY `name` ASC
 ```
 
 Conditionals do not require a 'comparison' as '=' is used by default:
@@ -213,7 +213,7 @@ Conditionals do not require a 'comparison' as '=' is used by default:
 		'value' => 5
 	)
 )
-// Converts to WHERE `id` = 5
+// Output: WHERE `id` = 5
 ```
 
 ### How Arguments Are Used
