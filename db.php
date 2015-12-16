@@ -414,6 +414,10 @@ class Database {
 			}
 		}
 		
+		if($field_list === '') {
+			$field_list = '*';
+		}
+		
 		return $field_list;
 	}
 	
