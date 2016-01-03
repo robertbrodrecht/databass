@@ -948,7 +948,7 @@ class Database {
 		if(!$fields) {
 			$fields = $this->fields;
 		} else {
-			$data = $this->parseFields($fields, $table);
+			$fields = $this->parseFields($fields, $table);
 		}
 		
 		if(!$where) {
