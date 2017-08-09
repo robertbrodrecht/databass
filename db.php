@@ -350,6 +350,8 @@ class Database {
 			$table = $this->table;
 		}
 		
+		$this->bind = array();
+		
 		foreach($data as $field => $value) {
 			$field = $this->normalizeField($field, $table);
 			if($field) {
