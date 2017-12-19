@@ -923,9 +923,11 @@ class Database {
 			$this->schema($table);
 		}
 		
-		foreach($this->schema[$table] as $schema_key => $schema_value) {
-			if($schema_key === $field) {
-				return $schema_value;
+		if($this->schema[$table]) {
+			foreach($this->schema[$table] as $schema_key => $schema_value) {
+				if($schema_key === $field) {
+					return $schema_value;
+				}
 			}
 		}
 		
